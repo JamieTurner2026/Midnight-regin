@@ -4,7 +4,7 @@ One milestone at a time. A milestone is finished when it has been played in the 
 
 | # | Milestone | Scope |
 |---|---|---|
-| 1 | Driving prototype | One drivable car: throttle, brake/reverse, steering, nitrous, chase camera. **Code written; needs compile + drive.** |
+| 1 | Driving prototype | One drivable car: throttle, brake/reverse, steering, nitrous, chase camera, plus generated car, parts and test block. **Code and assets ready; needs compile, import script run and a drive.** |
 | 2 | Racing prototype | Small Solaris Coast block, checkpoints, lap timing, basic opponent AI, results screen |
 | 3 | REIGN SCAN prototype | Simulated scan, three-car catalog, discovery records, dealership purchase with credits, garage ownership |
 | 4 | Vehicle mastery | Per-car XP (levels 1–50), upgrade tiers at 5/10/20/35/50, compatibility checks, purchase + visual install |

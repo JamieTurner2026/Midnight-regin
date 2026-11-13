@@ -1,53 +1,77 @@
 # Steps that need Unreal Editor
 
-The C++ in `unreal/MidnightReign` has not been compiled yet. Expect to send a few compiler
-messages back for fixing; paste the full error text.
+Everything that could be prepared without the editor is already in the repo: C++ gameplay code,
+the car, parts and track as FBX files, and a script that imports them and builds the test map.
 
-## 1. Build
+Neither the C++ nor the import script has been run in Unreal yet. Expect to send some error
+messages back for fixing; paste the full text from the Output Log.
+
+## 1. Build the code
 
 1. Install UE 5.6+ and the C++ toolchain for your platform.
-2. Right-click `MidnightReign.uproject` → *Generate project files* (switch engine version first if needed).
-3. Open the `.uproject`; accept the prompt to build the `MidnightReign` module.
+2. Right-click `unreal/MidnightReign/MidnightReign.uproject` → *Generate project files* (use
+   *Switch Unreal Engine version* first if you are not on 5.6).
+3. Open the `.uproject` and accept the prompt to build the `MidnightReign` module. The editor
+   will say the startup map is missing and open an empty level; that is expected until step 2.
 
-## 2. Get a car mesh (temporary stand-in)
+## 2. Run the visual setup script
 
-Chaos Vehicles needs a **Skeletal Mesh** with one bone per wheel and a Physics Asset. Until an
-original car comes out of Blender, borrow the engine's sample car:
+*Tools* → *Execute Python Script…* → choose `unreal/MidnightReign/Scripts/setup_visuals.py`.
 
-1. Content Browser → *Add* → *Add Feature or Content Pack* → *Vehicle* → *Add to project*.
-2. This adds a sports car skeletal mesh and its wheel Animation Blueprint. Its wheel bones are
-   `Phys_Wheel_FL`, `Phys_Wheel_FR`, `Phys_Wheel_BL`, `Phys_Wheel_BR`, which are this project's defaults.
+It creates, under `Content/MidnightReign`:
 
-The sample car is a placeholder for development only. Shipping cars must be original or licensed.
+- neon materials (`Materials/MI_MR_*`)
+- the Solaris GT skeletal mesh, `DA_SolarisGT` tuning asset and `BP_MRVehicle`
+- the customization part meshes
+- the track meshes and the map `Maps/L_SolarisTestBlock` with checkpoint arches, night lighting
+  and a Player Start
+- `BP_MRGameMode`, set as the map's game mode
 
-## 3. Make the vehicle Blueprint
+Open *Window* → *Output Log* and look for the `[MR setup] summary`. Each step reports `OK` or
+`FAILED` with the manual alternative. The script can be run again safely.
 
-1. Content Browser → right-click → *Blueprint Class* → search `MRVehiclePawn` → name it `BP_MRVehicle`.
-2. Select the **Mesh** component: set *Skeletal Mesh Asset* to the car mesh and *Anim Class* to its
-   wheel Animation Blueprint.
-3. (Optional) right-click → *Miscellaneous* → *Data Asset* → `MRVehicleTuningData`, name it
-   `DA_StarterCar`, and assign it to **Tuning** on `BP_MRVehicle`.
+## 3. Two manual steps (about five minutes)
 
-## 4. Game mode and map
+**Physics asset.** Open `Vehicles/SolarisGT/SK_SolarisGT_PhysicsAsset`. Delete the bodies on the
+four `Phys_Wheel_*` bones so only the `Root` body remains (wheels are simulated by Chaos, not by
+physics bodies). Select the `Root` body and check it roughly covers the car body; if not,
+right-click → *Regenerate Bodies* with *Primitive Type: Box*.
 
-1. *Blueprint Class* → `MRGameMode` → `BP_MRGameMode`; set *Default Pawn Class* to `BP_MRVehicle`.
-2. *File* → *New Level* → *Basic*. Scale the floor up (e.g. 200 × 200) for room to drive. Save as `Maps/L_TestTrack`.
-3. *World Settings* → *GameMode Override* → `BP_MRGameMode`.
-4. *Project Settings* → *Maps & Modes* → set *Editor Startup Map* and *Game Default Map* to `L_TestTrack`.
-5. Place a *Player Start* slightly above the floor. Press **Play**.
+**Wheel animation.** Without this the car drives but the wheels do not visibly spin or steer.
 
-## 5. What to check and report
+1. Right-click in `Vehicles/SolarisGT` → *Animation* → *Animation Blueprint*. Pick the
+   `SK_SolarisGT_Skeleton`, parent class **VehicleAnimationInstance**, name it `ABP_SolarisGT`.
+2. In its AnimGraph: add *Mesh Space Ref Pose* → *Wheel Controller for WheeledVehicle* →
+   *Component To Local* → *Output Pose*. Compile and save.
+3. Open `BP_MRVehicle`, select **Mesh**, set *Anim Class* to `ABP_SolarisGT`.
 
-- Car accelerates (W), brakes then reverses (S), steers (A/D), handbrake slides (Shift).
-- Space boosts only while moving forward; the NITRO bar drains in about 4 s, refills after release.
-- Camera follows smoothly and widens during boost; R puts a flipped car back on its wheels.
-- A gamepad works with triggers / left stick / A.
+## 4. Play
+
+Open `Maps/L_SolarisTestBlock` and press **Play**.
+
+- W/S/A/D or arrows drive, Space is nitro, Left Shift is the handbrake, R resets the car.
+- Gamepad: triggers, left stick, A for nitro.
+- The NITRO bar drains in about 4 seconds and refills after you release Space.
 - *Tools* → *Session Frontend* → *Automation* → run the `MidnightReign` tests.
 
-Feel adjustments (too fast, too slippery, steering too twitchy) are made in `DA_StarterCar` and in
+Handling changes (too fast, too slippery, twitchy steering) are made in `DA_SolarisGT` and in
 Blueprint subclasses of `MRWheelFront` / `MRWheelRear`, with no code changes.
+
+## If the script fails completely
+
+Do it by hand: import `assets/export/SK_SolarisGT.fbx` as a Skeletal Mesh, import the
+`assets/export/track/*.fbx` files as Static Meshes with *Collision Complexity: Use Complex
+Collision As Simple*, drag the track meshes into a new level at 0,0,0, create `BP_MRVehicle`
+(parent `MRVehiclePawn`) with the mesh assigned, and `BP_MRGameMode` (parent `MRGameMode`) with
+that pawn. As a last resort the engine's sample car (*Add* → *Add Feature or Content Pack* →
+*Vehicle*) uses the same wheel bone names and works as a stand-in.
 
 ## Commit the editor work
 
-Commit `Content/` (the Blueprint, data asset and map). Large binary assets should use Git LFS
-before the art grows: `git lfs track "*.uasset" "*.umap"`.
+Commit the `Content/` folder. Set up Git LFS before it grows: `git lfs track "*.uasset" "*.umap"`.
+
+## Not covered yet
+
+Exhaust flames and sound for nitrous (the `OnBoostStarted` / `OnBoostStopped` events are ready
+for a Niagara effect), on-screen touch controls, and attaching customization parts at runtime
+(Milestone 4).
