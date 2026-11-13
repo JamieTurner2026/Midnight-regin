@@ -24,7 +24,14 @@ from lib import mr_blender as mr  # noqa: E402
 HALF_X, HALF_Y, CORNER_R, ROAD_W = 20000, 12000, 6000, 1400
 WALL_OFFSET = 1000
 CHECKPOINT_COUNT = 6
+GRID_SLOTS = 6
+DEFAULT_LAPS = 3
 SEED = 2026
+
+
+def grid_slots():
+    """Staggered starting grid on the bottom straight, behind the line. Blender coordinates, slot 0 is pole."""
+    return [(-1000.0 - 800.0 * i, -HALF_Y + (250.0 if i % 2 == 0 else -250.0), 0.0) for i in range(GRID_SLOTS)]
 
 
 def centreline(step=1000.0, corner_segments=16):
@@ -113,6 +120,10 @@ def build_markings(pts):
             if (k + row) % 2 == 0:
                 y = -HALF_Y - ROAD_W / 2 + 50 + (k + 0.5) * (ROAD_W - 100) / 14
                 mr.add_box(bm, (-50 + row * 100, y, 0.9), (100, (ROAD_W - 100) / 14, 0.4), 1)
+    for gx, gy, _gz in grid_slots():                      # grid boxes: a front line and two short sides
+        mr.add_box(bm, (gx + 260, gy, 0.9), (16, 230, 0.4), 1)
+        for side in (-1, 1):
+            mr.add_box(bm, (gx + 190, gy + side * 107, 0.9), (140, 16, 0.4), 1)
     return mr.object_from_bmesh(bm, "SM_Track_Markings", ["M_MR_NeonCyan", "M_MR_RoadLine", "M_MR_NeonPink"], smooth=False)
 
 
@@ -136,7 +147,29 @@ def build_props(pts):
         mr.add_box(bm, arm, (300, 14, 14), 0, rot_z_deg=yaw)
         head = _offset(p, WALL_OFFSET - 150, 778)
         mr.add_box(bm, head, (90, 30, 10), 1, rot_z_deg=yaw)
-    return mr.object_from_bmesh(bm, "SM_Track_Props", ["M_MR_Trim", "M_MR_Window"], smooth=False)
+    for i, p in enumerate(pts):                           # glowing corner markers on top of the outer wall
+        if p["corner"] and i % 2 == 0:
+            yaw = math.degrees(math.atan2(p["normal"][1], p["normal"][0]))
+            mr.add_box(bm, _offset(p, WALL_OFFSET + 20, 165), (12, 300, 70), 2, rot_z_deg=yaw)
+    return mr.object_from_bmesh(bm, "SM_Track_Props", ["M_MR_Trim", "M_MR_Window", "M_MR_NeonPink"], smooth=False)
+
+
+def build_start_gantry():
+    """Start/finish gantry over the line at x = 0 on the bottom straight (built in place)."""
+    bm = bmesh.new()
+    span = WALL_OFFSET + 190
+    y0 = -HALF_Y
+    for s in (-1, 1):
+        mr.add_box(bm, (0, y0 + s * span, 450), (90, 90, 900), 0)
+        mr.add_box(bm, (-48, y0 + s * span, 450), (8, 30, 820), 1)
+    mr.add_box(bm, (0, y0, 940), (110, 2 * span + 90, 120), 0)
+    mr.add_box(bm, (-58, y0, 872), (8, 2 * span - 120, 14), 1)
+    cols = 24
+    width = (2 * span - 200) / cols
+    for c in range(cols):                                 # chequered banner facing the grid
+        for r in range(2):
+            mr.add_box(bm, (-58, y0 - span + 100 + (c + 0.5) * width, 915 + r * 50), (6, width, 50), 2 if (c + r) % 2 == 0 else 0)
+    return mr.object_from_bmesh(bm, "SM_Track_StartGantry", ["M_MR_Trim", "M_MR_NeonPink", "M_MR_RoadLine"], smooth=False)
 
 
 def _clear_of_road(x, y, half, margin=2600):
@@ -199,9 +232,10 @@ def build():
     pts, lap_length = centreline()
     buildings, footprints = build_buildings()
     objs = {o.name: o for o in (build_ground(pts), build_markings(pts), build_barriers(pts), build_props(pts),
-                                buildings, build_checkpoint_arch())}
+                                buildings, build_checkpoint_arch(), build_start_gantry())}
     cps = checkpoints(pts, lap_length)
-    start = (-3000.0, -HALF_Y, 60.0)
+    grid = grid_slots()
+    start = (grid[-1][0], grid[-1][1], 60.0)            # the player starts at the back of the grid
     layout = {
         "units": "cm",
         "name": "Solaris Coast test block",
@@ -215,8 +249,16 @@ def build():
             {"name": "SM_Track_Buildings", "fbx": "track/SM_Track_Buildings.fbx", "collision": "complex", "place_at_origin": True},
             {"name": "SM_Track_Props", "fbx": "track/SM_Track_Props.fbx", "collision": "complex", "place_at_origin": True},
             {"name": "SM_Track_Markings", "fbx": "track/SM_Track_Markings.fbx", "collision": "none", "place_at_origin": True},
+            {"name": "SM_Track_StartGantry", "fbx": "track/SM_Track_StartGantry.fbx", "collision": "complex", "place_at_origin": True},
             {"name": "SM_Checkpoint_Arch", "fbx": "track/SM_Checkpoint_Arch.fbx", "collision": "complex", "place_at_origin": False},
         ],
+        "laps": DEFAULT_LAPS,
+        "checkpoint_half_width_cm": WALL_OFFSET,
+        "grid": [mr.to_unreal(slot, 0.0) for slot in grid],
+        # Racing line for the AI: the centreline in driving order, Unreal coordinates.
+        # radius_cm 0 means straight. Index 0 is the start/finish line.
+        "racing_line": [{"x": round(p["pos"][0], 1), "y": round(-p["pos"][1], 1),
+                         "radius_cm": CORNER_R if p["corner"] else 0} for p in pts],
         "player_start": mr.to_unreal(start, 0.0),
         "checkpoints": [{"index": c["index"], **mr.to_unreal(c["blender_pos"], c["blender_yaw"])} for c in cps],
         "building_count": len(footprints),
