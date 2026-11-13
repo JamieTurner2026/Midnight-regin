@@ -77,7 +77,7 @@ def car():
 
 
 def test_every_fbx_is_in_centimetres_with_z_up_conversion():
-    assert len(all_fbx()) >= 13
+    assert len(all_fbx()) >= 14
     for path in all_fbx():
         assert fbx_global_setting(path, "UnitScaleFactor") == pytest.approx(1.0), path.name   # 1 unit = 1 cm
         assert fbx_global_setting(path, "UpAxis") == 1, path.name                              # Y-up file, converted by Unreal
@@ -174,7 +174,8 @@ def test_track_layout_and_meshes():
         x, y, _z = cp["location"]
         assert abs(x) <= half_x + 1 and abs(y) <= half_y + 1
     start = layout["player_start"]
-    assert start["location"][1] == half_y and start["yaw"] == 0 and start["location"][0] < 0   # on the straight, before the line
+    assert start["yaw"] == 0 and start["location"][0] < 0                         # on the straight, before the line
+    assert start["location"][:2] == layout["grid"][-1]["location"][:2]            # the player takes the last grid slot
     for mesh in layout["meshes"]:
         assert (EXPORT / mesh["fbx"]).exists()
         assert mesh["triangles"] < 30000
@@ -184,6 +185,53 @@ def test_track_layout_and_meshes():
     lo, hi = world_size(ground)
     assert hi[2] == pytest.approx(0.0, abs=0.001)                # road surface at z = 0
     assert hi[0] - lo[0] > 2 * half_x / 100                      # ground reaches beyond the loop
+
+
+def _distance_to_centreline(layout, x, y):
+    half_x, half_y = layout["half_extents_cm"]
+    corner_r = max(p["radius_cm"] for p in layout["racing_line"])
+    qx, qy = abs(x) - (half_x - corner_r), abs(y) - (half_y - corner_r)
+    signed = math.hypot(max(qx, 0), max(qy, 0)) + min(max(qx, qy), 0)
+    return abs(signed - corner_r)
+
+
+def test_racing_line_grid_and_checkpoints_are_on_the_road():
+    layout = json.loads((EXPORT / "track_layout.json").read_text())
+    line = layout["racing_line"]
+    half_road = layout["road_width_cm"] / 2
+    assert len(line) > 60 and layout["laps"] == 3
+
+    # Closed loop on the centreline, evenly enough spaced for the AI's look-ahead, same length as the lap.
+    length = 0.0
+    for a, b in zip(line, line[1:] + line[:1]):
+        step = math.hypot(b["x"] - a["x"], b["y"] - a["y"])
+        assert 300 < step < 1100
+        length += step
+        assert _distance_to_centreline(layout, a["x"], a["y"]) < 1.0
+    assert length == pytest.approx(layout["lap_length_cm"], rel=0.001)
+    assert (line[0]["x"], line[0]["y"]) == tuple(layout["checkpoints"][0]["location"][:2])
+    assert line[1]["x"] > line[0]["x"]                    # driven towards +X from the line, like the grid faces
+    assert {p["radius_cm"] for p in line} == {0, 6000}
+
+    # Every checkpoint sits on a racing-line point, in driving order.
+    indices = []
+    for cp in layout["checkpoints"]:
+        matches = [i for i, p in enumerate(line) if abs(p["x"] - cp["location"][0]) < 1 and abs(p["y"] - cp["location"][1]) < 1]
+        assert len(matches) == 1
+        indices.append(matches[0])
+    assert indices == sorted(indices) and indices[0] == 0
+    assert layout["checkpoint_half_width_cm"] > half_road
+
+    # Grid: six distinct slots on the road, behind the line, pole position closest to it.
+    grid = [g["location"] for g in layout["grid"]]
+    assert len(grid) == 6 and len({tuple(g) for g in grid}) == 6
+    xs = [g[0] for g in grid]
+    assert xs == sorted(xs, reverse=True) and xs[0] < -500
+    for (x, y, _z), g in zip(grid, layout["grid"]):
+        assert _distance_to_centreline(layout, x, y) < half_road - 300   # room for a 1.9 m wide car
+        assert g["yaw"] == 0
+    for a, b in zip(grid, grid[1:]):
+        assert a[0] - b[0] >= 700                         # a car length plus a gap between rows
 
 
 def test_buildings_and_walls_keep_clear_of_the_road():
@@ -196,7 +244,15 @@ def test_buildings_and_walls_keep_clear_of_the_road():
         signed = math.hypot(max(qx, 0), max(qy, 0)) + min(max(qx, qy), 0)
         return abs(signed - corner_r)
 
-    for name, clearance in (("SM_Track_Buildings", half_road + 3.0), ("SM_Track_Barriers", half_road + 2.0), ("SM_Track_Props", half_road + 1.0)):
+    overhead = 4.5    # metres: anything this high is clear of every vehicle
+    for name, clearance in (("SM_Track_Buildings", half_road + 3.0), ("SM_Track_Barriers", half_road + 2.0),
+                            ("SM_Track_Props", half_road + 1.0), ("SM_Track_StartGantry", half_road + 2.0)):
         mesh = next(o for o in import_fbx(EXPORT / f"track/{name}.fbx") if o.type == "MESH")
-        nearest = min(distance_to_centreline(*(mesh.matrix_world @ v.co).xy) for v in mesh.data.vertices)
-        assert nearest >= clearance, f"{name} comes within {nearest:.1f} m of the centreline"
+        points = [mesh.matrix_world @ v.co for v in mesh.data.vertices]
+        # Only the start gantry is meant to span the road, and only above vehicle height.
+        low = [p for p in points if name != "SM_Track_StartGantry" or p.z < overhead]
+        nearest = min(distance_to_centreline(p.x, p.y) for p in low)
+        assert nearest >= clearance, f"{name} comes within {nearest:.1f} m of the centreline at road level"
+        if name == "SM_Track_StartGantry":
+            assert min(p.z for p in points if distance_to_centreline(p.x, p.y) < half_road) > overhead, \
+                "gantry crosses the road below vehicle height"
