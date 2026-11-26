@@ -1,6 +1,6 @@
 """Render preview images of the generated assets into docs/previews.
 
-    python3 blender/render_previews.py [car|parts|track|hero|all] [--quick]
+    python3 blender/render_previews.py [car|parts|track|hero|run|all] [--quick]
 """
 import math
 import sys
@@ -104,6 +104,39 @@ def render_hero(quick):
     print("OUTPUT", mr.render(mr.PREVIEW_DIR / "hero_start_line.png"))
 
 
+LAMP_WATTS = 4.0e6   # scene units are cm (unit scale 0.01), so lamp power is large in Blender's terms
+
+
+def _street_lamps(layout):
+    """A warm point light under every lamp head (Unreal gets the same from setup_visuals.py)."""
+    for i, (x, y, z) in enumerate(layout["street_lamps"]):
+        light = bpy.data.lights.new(f"Lamp{i}", "POINT")
+        light.energy = LAMP_WATTS
+        light.color = mr.hex_rgba("#FFD49A")[:3]
+        light.shadow_soft_size = 30
+        obj = bpy.data.objects.new(f"Lamp{i}", light)
+        obj.location = (x, -y, z - 25)                     # back from Unreal coordinates (Y flips)
+        bpy.context.collection.objects.link(obj)
+
+
+def render_run(quick):
+    """Look target for the checkpoint run: the car closing on the first gate on a wet night street."""
+    mr.reset_scene()
+    objs, layout, cps = build_track.build()
+    _place_arches(objs, cps)
+    gate = next(c for c in cps if c["index"] == layout["run"]["gates"][0])
+    heading = math.radians(gate["blender_yaw"])
+    fx, fy = math.cos(heading), math.sin(heading)
+    gx, gy, _ = gate["blender_pos"]
+    _arm, car = build_vehicle.build(build_vehicle.load_spec(SPEC), rigged=False)
+    car.location = (gx - 2400 * fx, gy - 2400 * fy, 0)
+    car.rotation_euler = (0, 0, heading)
+    _night(quick)
+    _street_lamps(layout)
+    mr.add_camera((car.location[0] + 650 * fx, car.location[1] + 650 * fy, 150), (-fx, -fy, 0.17), 1500, fov_deg=62)
+    print("OUTPUT", mr.render(mr.PREVIEW_DIR / "checkpoint_run.png"))
+
+
 if __name__ == "__main__":
     what = next((a for a in sys.argv[1:] if not a.startswith("--")), "all")
     quick = "--quick" in sys.argv
@@ -115,3 +148,5 @@ if __name__ == "__main__":
         render_track(quick)
     if what in ("hero", "all") and "render_hero" in globals():
         render_hero(quick)
+    if what in ("run", "all"):
+        render_run(quick)

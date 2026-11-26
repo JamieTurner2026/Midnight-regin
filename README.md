@@ -13,6 +13,7 @@ Blender for assets, and the original Pygame prototype kept as the gameplay refer
 | Unreal project: vehicle pawn, nitrous, chase camera, input, HUD | `unreal/MidnightReign` | **Written, not yet compiled or driven** — needs your Unreal Editor |
 | Starter car, customization parts, Solaris Coast test block (FBX) | `assets/export`, built by `blender/` | Generated, rendered and tested (`pytest blender/tests`) |
 | Unreal import script: materials, vehicle Blueprint, tuning asset, test map | `unreal/MidnightReign/Scripts/setup_visuals.py` | **Written, not yet run** — needs your Unreal Editor |
+| Checkpoint run: three gates in 60 s, HUD clock, result banner, restart, Niagara effect slots, street-lamp lights | `core/include/mr/CheckpointRun.h` (tested), `Game/MRCheckpoint`, `MRGameMode` | Rule tested (`ctest`); Unreal side **written, not compiled**. Steps: `docs/editor-setup.md` §5, `docs/standalone-build.md` |
 
 The Unreal code and import script were written without access to Unreal Editor. Treat them as
 unverified until they have been compiled and run on your machine.
@@ -57,5 +58,6 @@ docs/               mapping from prototype to UE5, editor steps, roadmap
 - `docs/python-to-ue5-mapping.md` — how each prototype mechanic maps to Unreal
 - `docs/systems.md` — the systems added in Milestone 1 and how they fit together
 - `docs/art-pipeline.md` — Blender → Unreal conventions and preview renders
-- `docs/editor-setup.md` — the steps that need Unreal Editor
+- `docs/editor-setup.md` — the steps that need Unreal Editor (§5: the checkpoint run)
+- `docs/standalone-build.md` — packaging a Development build and what to test in it
 - `docs/roadmap.md` — milestones 2–6 and what can be done where

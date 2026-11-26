@@ -14,6 +14,7 @@ proportions and layout are what carries over.
 | ![Car, front](previews/car_front_three_quarter.png) | ![Car, rear](previews/car_rear_three_quarter.png) |
 | ![Car, side](previews/car_side.png) | ![Car, top](previews/car_top.png) |
 | ![Start line](previews/hero_start_line.png) | ![Track overview](previews/track_overview.png) |
+| ![Checkpoint run look target](previews/checkpoint_run.png) | Checkpoint run look target: the car closing on the first gate, wet asphalt, lamp light |
 | ![Track map](previews/track_map.png) | ![Parts](previews/parts.png) |
 
 ## What exists

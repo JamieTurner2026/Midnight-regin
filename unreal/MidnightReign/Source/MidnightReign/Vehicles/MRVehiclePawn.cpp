@@ -6,11 +6,13 @@
 #include "Engine/LocalPlayer.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
+#include "Game/MRGameMode.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "Input/MRInputConfig.h"
 #include "InputActionValue.h"
 #include "MidnightReign.h"
+#include "NiagaraComponent.h"
 #include "Vehicles/MRNitrousComponent.h"
 #include "Vehicles/MRVehicleTuningData.h"
 #include "Vehicles/MRWheels.h"
@@ -21,6 +23,7 @@ AMRVehiclePawn::AMRVehiclePawn()
 
 	GetMesh()->SetSimulatePhysics(true);
 	GetMesh()->SetCollisionProfileName(FName("Vehicle"));
+	GetMesh()->SetGenerateOverlapEvents(true); // checkpoint gates detect the car by overlap
 
 	// Chase camera: follows yaw with lag, ignores pitch/roll so jumps and
 	// bumps do not throw the view around.
@@ -44,6 +47,17 @@ AMRVehiclePawn::AMRVehiclePawn()
 	ChaseCamera->FieldOfView = BaseFOV;
 
 	Nitrous = CreateDefaultSubobject<UMRNitrousComponent>(TEXT("Nitrous"));
+
+	// Effect slots: positions suit the Solaris GT (4.41 m long, +X forward, cm). Assets are set in BP_MRVehicle.
+	NitroFlame = CreateDefaultSubobject<UNiagaraComponent>(TEXT("NitroFlame"));
+	NitroFlame->SetupAttachment(GetMesh());
+	NitroFlame->SetRelativeLocationAndRotation(FVector(-225.f, 0.f, 35.f), FRotator(0.f, 180.f, 0.f));
+	NitroFlame->SetAutoActivate(false);
+
+	DriftSparks = CreateDefaultSubobject<UNiagaraComponent>(TEXT("DriftSparks"));
+	DriftSparks->SetupAttachment(GetMesh());
+	DriftSparks->SetRelativeLocation(FVector(-140.f, 0.f, 5.f));
+	DriftSparks->SetAutoActivate(false);
 
 	// Sensible C++ defaults so the car drives without a Tuning asset.
 	// A Tuning asset, when assigned, overrides these in PreRegisterAllComponents.
@@ -109,6 +123,11 @@ void AMRVehiclePawn::BeginPlay()
 {
 	Super::BeginPlay();
 	ApplyRuntimeTuning();
+	if (Nitrous)
+	{
+		Nitrous->OnBoostStarted.AddDynamic(this, &AMRVehiclePawn::HandleBoostStarted);
+		Nitrous->OnBoostStopped.AddDynamic(this, &AMRVehiclePawn::HandleBoostStopped);
+	}
 }
 
 void AMRVehiclePawn::ApplyRuntimeTuning()
@@ -153,6 +172,8 @@ void AMRVehiclePawn::Tick(float DeltaSeconds)
 		const float TargetFOV = (Nitrous && Nitrous->IsBoosting()) ? BoostFOV : BaseFOV;
 		ChaseCamera->SetFieldOfView(FMath::FInterpTo(ChaseCamera->FieldOfView, TargetFOV, DeltaSeconds, FOVInterpSpeed));
 	}
+
+	UpdateDriftSparks();
 }
 
 void AMRVehiclePawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -193,6 +214,7 @@ void AMRVehiclePawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCompo
 		Input->BindAction(InputConfig->HandbrakeAction, Event, this, &AMRVehiclePawn::OnHandbrake);
 	}
 	Input->BindAction(InputConfig->ResetAction, ETriggerEvent::Started, this, &AMRVehiclePawn::OnReset);
+	Input->BindAction(InputConfig->RestartAction, ETriggerEvent::Started, this, &AMRVehiclePawn::OnRestartRun);
 }
 
 void AMRVehiclePawn::OnThrottle(const FInputActionValue& Value) { SetThrottleInput(Value.Get<float>()); }
@@ -216,12 +238,64 @@ void AMRVehiclePawn::ResetVehicle()
 		return;
 	}
 
-	const FVector Location = GetActorLocation() + FVector(0.f, 0.f, 80.f);
-	const FRotator Upright(0.f, GetActorRotation().Yaw, 0.f);
+	ResetVehicleAt(FTransform(FRotator(0.f, GetActorRotation().Yaw, 0.f), GetActorLocation()));
+}
+
+void AMRVehiclePawn::ResetVehicleAt(const FTransform& Transform)
+{
+	USkeletalMeshComponent* Body = GetMesh();
+	if (!Body)
+	{
+		return;
+	}
+
+	const FVector Location = Transform.GetLocation() + FVector(0.f, 0.f, 80.f);
+	const FRotator Upright(0.f, Transform.Rotator().Yaw, 0.f);
 	Body->SetWorldLocationAndRotation(Location, Upright, false, nullptr, ETeleportType::TeleportPhysics);
 	Body->SetPhysicsLinearVelocity(FVector::ZeroVector);
 	Body->SetPhysicsAngularVelocityInDegrees(FVector::ZeroVector);
 	SmoothedSteer = 0.f;
+}
+
+void AMRVehiclePawn::OnRestartRun(const FInputActionValue& /*Value*/)
+{
+	if (AMRGameMode* GameMode = GetWorld() ? GetWorld()->GetAuthGameMode<AMRGameMode>() : nullptr)
+	{
+		GameMode->RestartRun();
+	}
+}
+
+void AMRVehiclePawn::HandleBoostStarted()
+{
+	if (NitroFlame && NitroFlame->GetAsset())
+	{
+		NitroFlame->Activate(true);
+	}
+}
+
+void AMRVehiclePawn::HandleBoostStopped()
+{
+	if (NitroFlame)
+	{
+		NitroFlame->Deactivate();
+	}
+}
+
+void AMRVehiclePawn::UpdateDriftSparks()
+{
+	if (!DriftSparks || !DriftSparks->GetAsset())
+	{
+		return;
+	}
+	const bool bWant = bHandbrakeHeld && FMath::Abs(GetSpeedKmh()) >= DriftSparksMinKmh;
+	if (bWant && !DriftSparks->IsActive())
+	{
+		DriftSparks->Activate(true);
+	}
+	else if (!bWant && DriftSparks->IsActive())
+	{
+		DriftSparks->Deactivate();
+	}
 }
 
 float AMRVehiclePawn::GetSpeedKmh() const

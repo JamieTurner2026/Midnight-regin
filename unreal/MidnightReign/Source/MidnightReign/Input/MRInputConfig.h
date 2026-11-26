@@ -17,6 +17,7 @@ class UInputMappingContext;
  *   Nitrous    Space         / Gamepad A (bottom face button)
  *   Handbrake  Left Shift    / Gamepad B (right face button)
  *   Reset car  R             / Gamepad Y (top face button)
+ *   Restart run  Enter       / Gamepad Start (right special button)
  *
  * Mobile: bind on-screen UMG buttons / a virtual joystick to the same actions
  * (or call the pawn's Set*Input functions). Racing wheels arrive through the
@@ -48,6 +49,10 @@ public:
 
 	UPROPERTY(BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UInputAction> ResetAction;
+
+	/** Put the car on the start line and start the checkpoint run again. */
+	UPROPERTY(BlueprintReadOnly, Category = "Input")
+	TObjectPtr<UInputAction> RestartAction;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UInputMappingContext> MappingContext;
