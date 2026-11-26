@@ -10,6 +10,7 @@ class UChaosWheeledVehicleMovementComponent;
 class UMRInputConfig;
 class UMRNitrousComponent;
 class UMRVehicleTuningData;
+class UNiagaraComponent;
 class USpringArmComponent;
 struct FInputActionValue;
 
@@ -59,6 +60,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "MidnightReign|Vehicle")
 	void ResetVehicle();
 
+	/** Put the car on its wheels at Transform (e.g. the Player Start), stopped. Used by the run restart. */
+	UFUNCTION(BlueprintCallable, Category = "MidnightReign|Vehicle")
+	void ResetVehicleAt(const FTransform& Transform);
+
 	// --- State for HUD / UI (read-only; UI never drives gameplay) ---
 
 	UFUNCTION(BlueprintPure, Category = "MidnightReign|Vehicle")
@@ -105,6 +110,18 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "MidnightReign|Camera")
 	float FOVInterpSpeed = 4.f;
 
+	/** Exhaust flame while nitrous is boosting. Set its Niagara System in BP_MRVehicle (NS_MR_NitroFlame). */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MidnightReign|Effects")
+	TObjectPtr<UNiagaraComponent> NitroFlame;
+
+	/** Sparks and smoke from the rear tyres while the handbrake slides the car. Set NS_MR_TyreSparks in BP_MRVehicle. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MidnightReign|Effects")
+	TObjectPtr<UNiagaraComponent> DriftSparks;
+
+	/** Drift sparks show only above this speed with the handbrake held. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "MidnightReign|Effects")
+	float DriftSparksMinKmh = 35.f;
+
 private:
 	void OnThrottle(const FInputActionValue& Value);
 	void OnBrake(const FInputActionValue& Value);
@@ -112,6 +129,15 @@ private:
 	void OnNitrous(const FInputActionValue& Value);
 	void OnHandbrake(const FInputActionValue& Value);
 	void OnReset(const FInputActionValue& Value);
+	void OnRestartRun(const FInputActionValue& Value);
+
+	UFUNCTION()
+	void HandleBoostStarted();
+
+	UFUNCTION()
+	void HandleBoostStopped();
+
+	void UpdateDriftSparks();
 
 	UPROPERTY(Transient)
 	TObjectPtr<UMRInputConfig> InputConfig;

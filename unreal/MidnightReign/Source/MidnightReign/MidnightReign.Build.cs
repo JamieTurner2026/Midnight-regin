@@ -15,7 +15,8 @@ public class MidnightReign : ModuleRules
 			"InputCore",
 			"EnhancedInput",
 			"ChaosVehicles",
-			"PhysicsCore"
+			"PhysicsCore",
+			"Niagara"
 		});
 
 		// Folders inside this module are included as "Vehicles/MRVehiclePawn.h" etc.

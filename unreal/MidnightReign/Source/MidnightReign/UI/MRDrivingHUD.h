@@ -5,8 +5,8 @@
 #include "MRDrivingHUD.generated.h"
 
 /**
- * Minimal neon driving HUD drawn on the canvas: speed, gear, nitrous bar and
- * a controls hint (the prototype's HUD line). Presentation only: it reads
+ * Minimal neon driving HUD drawn on the canvas: speed, gear, nitrous bar,
+ * the checkpoint run (time left, next gate, result) and a controls hint. Presentation only: it reads
  * state from the pawn and never changes gameplay. Replace with UMG widgets
  * later; they can use the same BlueprintPure getters.
  */
@@ -17,6 +17,12 @@ class MIDNIGHTREIGN_API AMRDrivingHUD : public AHUD
 
 public:
 	virtual void DrawHUD() override;
+
+private:
+	/** Checkpoint run: time left, next gate and the win / time-up banner. Reads the game mode only. */
+	void DrawRun(float Width, float Height, float UIScale);
+
+public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MidnightReign|HUD")
 	FLinearColor NeonCyan = FLinearColor(0.f, 1.f, 1.f);

@@ -2,6 +2,7 @@
 #include <cmath>
 #include <cstdio>
 
+#include "mr/CheckpointRun.h"
 #include "mr/DrivingModel.h"
 #include "mr/Nitrous.h"
 #include "mr/Steering.h"
@@ -184,6 +185,90 @@ static void TestArcadeDrive()
 	CHECK_NEAR(Run(Boost, 0.4f, 1.f / 30.f).Speed, Run(Boost, 0.4f, 1.f / 240.f).Speed, 1.0);
 }
 
+static void TestCheckpointRunWinInOrder()
+{
+	mr::CheckpointRun Run(mr::CheckpointRunConfig{3, 60.f});
+	CHECK(Run.GetState() == mr::RunState::Ready);
+	CHECK(!Run.PassCheckpoint(0).bPassed);            // not started: ignored
+	CHECK(Run.Start().bStarted);
+	CHECK(Run.IsRunning());
+	Run.Tick(10.f);
+	mr::CheckpointRunEvents Ev = Run.PassCheckpoint(0);
+	CHECK(Ev.bPassed && Ev.PassedIndex == 0 && !Ev.bWon);
+	CHECK_NEAR(Run.GetSplit(0), 10.0, 1e-5);
+	CHECK(Run.GetNextCheckpoint() == 1);
+	Run.Tick(15.f);
+	CHECK(Run.PassCheckpoint(1).bPassed);
+	Run.Tick(20.f);
+	Ev = Run.PassCheckpoint(2);
+	CHECK(Ev.bPassed && Ev.bWon);
+	CHECK(Run.GetState() == mr::RunState::Won);
+	CHECK_NEAR(Run.GetElapsed(), 45.0, 1e-4);
+	CHECK_NEAR(Run.GetTimeLeft(), 15.0, 1e-4);
+	CHECK(Run.GetNextCheckpoint() == 3);
+	// Finished: the clock stops and no more events.
+	CHECK(!Run.Tick(30.f).bLost);
+	CHECK_NEAR(Run.GetElapsed(), 45.0, 1e-4);
+	CHECK(!Run.PassCheckpoint(2).bPassed);
+}
+
+static void TestCheckpointRunOrderEnforced()
+{
+	mr::CheckpointRun Run(mr::CheckpointRunConfig{3, 60.f});
+	Run.Start();
+	CHECK(!Run.PassCheckpoint(1).bPassed);            // skipped ahead
+	CHECK(!Run.PassCheckpoint(2).bPassed);
+	CHECK(!Run.PassCheckpoint(-1).bPassed);           // unknown
+	CHECK(!Run.PassCheckpoint(7).bPassed);
+	CHECK(Run.GetNextCheckpoint() == 0);
+	CHECK(Run.PassCheckpoint(0).bPassed);
+	CHECK(!Run.PassCheckpoint(0).bPassed);            // the same gate twice
+	CHECK(Run.GetNextCheckpoint() == 1);
+	CHECK_NEAR(Run.GetSplit(1), -1.0, 1e-6);
+	CHECK_NEAR(Run.GetSplit(9), -1.0, 1e-6);
+}
+
+static void TestCheckpointRunTimeout()
+{
+	mr::CheckpointRun Run(mr::CheckpointRunConfig{3, 5.f});
+	Run.Start();
+	Run.PassCheckpoint(0);
+	bool bLost = false;
+	int LostEvents = 0;
+	for (int i = 0; i < 1000; ++i)
+	{
+		const mr::CheckpointRunEvents Ev = Run.Tick(1.f / 60.f);
+		if (Ev.bLost) { bLost = true; ++LostEvents; }
+	}
+	CHECK(bLost && LostEvents == 1);                  // reported once
+	CHECK(Run.GetState() == mr::RunState::Lost);
+	CHECK_NEAR(Run.GetTimeLeft(), 0.0, 1e-6);
+	CHECK_NEAR(Run.GetElapsed(), 5.0, 1e-6);          // clamped at the limit
+	CHECK(!Run.PassCheckpoint(1).bPassed);            // too late
+}
+
+static void TestCheckpointRunRestartAndBadConfig()
+{
+	mr::CheckpointRun Run(mr::CheckpointRunConfig{2, 30.f});
+	Run.Start();
+	Run.Tick(3.f);
+	Run.PassCheckpoint(0);
+	CHECK(Run.Start().bStarted);                      // restart clears everything
+	CHECK(Run.GetNextCheckpoint() == 0);
+	CHECK_NEAR(Run.GetElapsed(), 0.0, 1e-6);
+	CHECK_NEAR(Run.GetSplit(0), -1.0, 1e-6);
+	Run.Tick(-1.f);                                   // negative time is ignored
+	CHECK_NEAR(Run.GetElapsed(), 0.0, 1e-6);
+	Run.Reset();
+	CHECK(Run.GetState() == mr::RunState::Ready);
+
+	mr::CheckpointRun Empty(mr::CheckpointRunConfig{0, 30.f});
+	CHECK(!Empty.Start().bStarted);
+	CHECK(Empty.GetState() == mr::RunState::Ready);
+	mr::CheckpointRun NoTime(mr::CheckpointRunConfig{3, 0.f});
+	CHECK(!NoTime.Start().bStarted);
+}
+
 int main()
 {
 	TestNitrousDrainAndEvents();
@@ -194,6 +279,10 @@ int main()
 	TestSteeringScale();
 	TestSteeringSmoothing();
 	TestArcadeDrive();
+	TestCheckpointRunWinInOrder();
+	TestCheckpointRunOrderEnforced();
+	TestCheckpointRunTimeout();
+	TestCheckpointRunRestartAndBadConfig();
 	std::printf("%d checks, %d failures\n", GChecks, GFailures);
 	return GFailures == 0 ? 0 : 1;
 }

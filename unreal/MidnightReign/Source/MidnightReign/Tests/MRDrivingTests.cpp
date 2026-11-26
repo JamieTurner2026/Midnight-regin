@@ -6,6 +6,8 @@
 #include "Misc/AutomationTest.h"
 
 #include "ChaosWheeledVehicleMovementComponent.h"
+#include "Game/MRCheckpoint.h"
+#include "Game/MRGameMode.h"
 #include "Input/MRInputConfig.h"
 #include "InputAction.h"
 #include "InputMappingContext.h"
@@ -66,6 +68,13 @@ bool FMRInputConfigTest::RunTest(const FString& Parameters)
 		}
 		TestTrue(TEXT("Space is nitrous, as in the prototype"), bSpaceIsNitrous);
 		TestTrue(TEXT("W is throttle, as in the prototype"), bWIsThrottle);
+
+		bool bEnterRestarts = false;
+		for (const FEnhancedActionKeyMapping& Mapping : Config->MappingContext->GetMappings())
+		{
+			bEnterRestarts |= Mapping.Key == EKeys::Enter && Mapping.Action == Config->RestartAction;
+		}
+		TestTrue(TEXT("Enter restarts the checkpoint run"), bEnterRestarts);
 	}
 	return true;
 }
@@ -97,6 +106,28 @@ bool FMRVehicleDefaultsTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Gears applied"), Scratch->TransmissionSetup.ForwardGearRatios.Num(), 3);
 	TestTrue(TEXT("Drivetrain applied"), Scratch->DifferentialSetup.DifferentialType == EVehicleDifferential::AllWheelDrive);
 	TestEqual(TEXT("Wheels applied"), Scratch->WheelSetups.Num(), 4);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMRCheckpointRunWiringTest, "MidnightReign.Game.CheckpointRunWiring",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMRCheckpointRunWiringTest::RunTest(const FString& Parameters)
+{
+	// The rules themselves are tested in core/tests; this checks the Unreal side maps them correctly.
+	TestTrue(TEXT("Ready"), AMRGameMode::ToRunState(mr::RunState::Ready) == EMRRunState::Ready);
+	TestTrue(TEXT("Running"), AMRGameMode::ToRunState(mr::RunState::Running) == EMRRunState::Running);
+	TestTrue(TEXT("Won"), AMRGameMode::ToRunState(mr::RunState::Won) == EMRRunState::Won);
+	TestTrue(TEXT("Lost"), AMRGameMode::ToRunState(mr::RunState::Lost) == EMRRunState::Lost);
+
+	const AMRGameMode* Defaults = GetDefault<AMRGameMode>();
+	TestTrue(TEXT("A positive time limit"), Defaults->TimeLimit > 0.f);
+	TestTrue(TEXT("The run starts on play"), Defaults->bStartRunOnPlay);
+	TestEqual(TEXT("No gates before play: free roam"), Defaults->GetNumCheckpoints(), 0);
+
+	const AMRCheckpoint* Gate = GetDefault<AMRCheckpoint>();
+	TestEqual(TEXT("Default gate order"), Gate->Order, 0);
+	TestFalse(TEXT("No gate is next before the run starts"), Gate->IsNext());
 	return true;
 }
 

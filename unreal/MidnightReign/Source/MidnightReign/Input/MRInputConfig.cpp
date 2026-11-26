@@ -28,6 +28,7 @@ void UMRInputConfig::BuildDefaults()
 	NitrousAction = MakeAction(this, TEXT("IA_MR_Nitrous"), EInputActionValueType::Boolean);
 	HandbrakeAction = MakeAction(this, TEXT("IA_MR_Handbrake"), EInputActionValueType::Boolean);
 	ResetAction = MakeAction(this, TEXT("IA_MR_Reset"), EInputActionValueType::Boolean);
+	RestartAction = MakeAction(this, TEXT("IA_MR_RestartRun"), EInputActionValueType::Boolean);
 
 	MappingContext = NewObject<UInputMappingContext>(this, TEXT("IMC_MR_Driving"));
 
@@ -66,4 +67,6 @@ void UMRInputConfig::BuildDefaults()
 	MappingContext->MapKey(HandbrakeAction, EKeys::Gamepad_FaceButton_Right);
 	MappingContext->MapKey(ResetAction, EKeys::R);
 	MappingContext->MapKey(ResetAction, EKeys::Gamepad_FaceButton_Top);
+	MappingContext->MapKey(RestartAction, EKeys::Enter);
+	MappingContext->MapKey(RestartAction, EKeys::Gamepad_Special_Right);
 }
