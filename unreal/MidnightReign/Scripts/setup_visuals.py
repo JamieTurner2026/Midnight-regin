@@ -11,8 +11,9 @@ It imports the generated FBX files from <repo>/assets/export and creates, under
   Vehicles/    SK_SolarisGT (+ skeleton, physics asset), DA_SolarisGT, BP_MRVehicle
   Parts/       wheel, spoiler and bumper static meshes
   Track/       the Solaris Coast test block meshes
-  Core/        BP_MRGameMode
-  Maps/        L_SolarisTestBlock (track, checkpoint arches, night lighting, Player Start)
+  Core/        BP_MRGameMode (run time limit from track_layout.json), BP_MRCheckpoint
+  Maps/        L_SolarisTestBlock (track, the three run gates plus scenery arches, street-lamp
+               lights, night lighting, Player Start)
 
 Safe to run again: existing assets are reused or re-imported.
 
@@ -267,9 +268,24 @@ def create_vehicle_blueprint(skeletal_mesh, tuning):
 @step("Game mode Blueprint", "Create Blueprint BP_MRGameMode (parent MRGameMode); set Default Pawn Class to BP_MRVehicle.")
 def create_game_mode_blueprint(vehicle_blueprint):
     blueprint = create_blueprint("BP_MRGameMode", ROOT + "/Core", unreal.MRGameMode)
+    defaults = unreal.get_default_object(blueprint.generated_class())
     if vehicle_blueprint:
-        defaults = unreal.get_default_object(blueprint.generated_class())
         defaults.set_editor_property("default_pawn_class", vehicle_blueprint.generated_class())
+    run = read_json("track_layout.json").get("run")
+    if run:
+        defaults.set_editor_property("time_limit", float(run["time_limit_s"]))
+    unreal.BlueprintEditorLibrary.compile_blueprint(blueprint)
+    eal.save_loaded_asset(blueprint)
+    return blueprint
+
+
+@step("Checkpoint Blueprint", "Create Blueprint BP_MRCheckpoint (parent MRCheckpoint) in Core; set Arch > Static Mesh to SM_Checkpoint_Arch.")
+def create_checkpoint_blueprint(track_meshes):
+    blueprint = create_blueprint("BP_MRCheckpoint", ROOT + "/Core", unreal.MRCheckpoint)
+    arch = track_meshes.get("SM_Checkpoint_Arch")
+    if arch:
+        defaults = unreal.get_default_object(blueprint.generated_class())
+        defaults.get_editor_property("arch").set_editor_property("static_mesh", arch)
     unreal.BlueprintEditorLibrary.compile_blueprint(blueprint)
     eal.save_loaded_asset(blueprint)
     return blueprint
@@ -277,8 +293,9 @@ def create_game_mode_blueprint(vehicle_blueprint):
 
 # ---------------------------------------------------------------------- map
 
-@step("Test map", "Create a level, drag the SM_Track_* meshes in at 0,0,0, add a Player Start on the bottom straight.")
-def create_map(track_meshes, game_mode_blueprint):
+@step("Test map", "Create a level, drag the SM_Track_* meshes in at 0,0,0, add a Player Start on the bottom straight, "
+                  "and place BP_MRCheckpoint at the run gates with Order 0, 1, 2 (track_layout.json > run > gates).")
+def create_map(track_meshes, game_mode_blueprint, checkpoint_blueprint=None):
     layout = read_json("track_layout.json")
     levels = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
     actors = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
@@ -303,14 +320,32 @@ def create_map(track_meshes, game_mode_blueprint):
         if entry["collision"] == "none":
             actor.set_actor_enable_collision(False)
 
+    # The timed run's gates are BP_MRCheckpoint actors with Order 0, 1, 2; the other arches are scenery.
     arch = track_meshes.get("SM_Checkpoint_Arch")
+    gates = (layout.get("run") or {}).get("gates", [])
+    gate_class = checkpoint_blueprint.generated_class() if checkpoint_blueprint else None
     for checkpoint in layout["checkpoints"]:
-        if arch is None:
-            break
         x, y, z = checkpoint["location"]
-        actor = actors.spawn_actor_from_object(arch, unreal.Vector(x, y, z),
-                                               unreal.Rotator(roll=0.0, pitch=0.0, yaw=checkpoint["yaw"]))
-        actor.set_actor_label("MR_Checkpoint_%02d" % checkpoint["index"])
+        where = unreal.Vector(x, y, z)
+        facing = unreal.Rotator(roll=0.0, pitch=0.0, yaw=checkpoint["yaw"])
+        if gate_class and checkpoint["index"] in gates:
+            order = gates.index(checkpoint["index"])
+            actor = actors.spawn_actor_from_class(gate_class, where, facing)
+            actor.set_editor_property("order", order)
+            actor.set_actor_label("MR_Gate_%d%s" % (order, "_Finish" if order == len(gates) - 1 else ""))
+        elif arch is not None:
+            actor = actors.spawn_actor_from_object(arch, where, facing)
+            actor.set_actor_label("MR_Checkpoint_%02d" % checkpoint["index"])
+
+    # A warm point light under every street-lamp head (the lamp mesh itself only glows).
+    for i, (x, y, z) in enumerate(layout.get("street_lamps", [])):
+        lamp = actors.spawn_actor_from_class(unreal.PointLight, unreal.Vector(x, y, z - 25.0), no_rotation)
+        lamp.set_actor_label("MR_StreetLamp_%02d" % i)
+        light = lamp.get_component_by_class(unreal.PointLightComponent)
+        light.set_editor_property("intensity", 12.0)             # candela
+        light.set_editor_property("attenuation_radius", 2600.0)
+        light.set_editor_property("light_color", unreal.Color(r=255, g=212, b=154, a=255))
+        light.set_editor_property("cast_shadows", False)         # 20 lamps: keep the frame cheap
 
     x, y, z = layout["player_start"]["location"]
     start = actors.spawn_actor_from_class(unreal.PlayerStart, unreal.Vector(x, y, z + 40.0),
@@ -357,7 +392,7 @@ def main():
     if not os.path.isdir(EXPORT_DIR):
         unreal.log_error("[MR setup] Cannot find %s. Run this from the project inside the midnight-reign repo." % EXPORT_DIR)
         return
-    for cls in ("MRVehiclePawn", "MRGameMode", "MRVehicleTuningData"):
+    for cls in ("MRVehiclePawn", "MRGameMode", "MRVehicleTuningData", "MRCheckpoint"):
         if not hasattr(unreal, cls):
             unreal.log_error("[MR setup] Class %s not found. Compile the MidnightReign C++ module first." % cls)
             return
@@ -369,7 +404,8 @@ def main():
     tuning = create_tuning_asset()
     vehicle_blueprint = create_vehicle_blueprint(skeletal_mesh, tuning)
     game_mode_blueprint = create_game_mode_blueprint(vehicle_blueprint)
-    create_map(track_meshes, game_mode_blueprint)
+    checkpoint_blueprint = create_checkpoint_blueprint(track_meshes)
+    create_map(track_meshes, game_mode_blueprint, checkpoint_blueprint)
 
     log("---------------- summary ----------------")
     for name, ok, hint in RESULTS:
@@ -377,7 +413,8 @@ def main():
             log("OK      " + name)
         else:
             unreal.log_warning("[MR setup] FAILED  %s  -> manual: %s" % (name, hint))
-    log("Remaining manual steps: wheel Animation Blueprint and physics asset clean-up (docs/editor-setup.md).")
+    log("Remaining manual steps: wheel Animation Blueprint, physics asset clean-up, and the three Niagara effects "
+        "for the checkpoint run (docs/editor-setup.md).")
 
 
 main()
