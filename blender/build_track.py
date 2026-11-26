@@ -24,6 +24,10 @@ from lib import mr_blender as mr  # noqa: E402
 HALF_X, HALF_Y, CORNER_R, ROAD_W = 20000, 12000, 6000, 1400
 WALL_OFFSET = 1000
 CHECKPOINT_COUNT = 6
+# The timed checkpoint run (AMRGameMode): drive through these checkpoint indices in order; the last is the finish.
+# 2 and 4 sit at a third and two thirds of the lap, 0 is the start/finish line. The other arches are scenery.
+RUN_GATES = (2, 4, 0)
+RUN_TIME_LIMIT_S = 60.0
 SEED = 2026
 
 
@@ -124,8 +128,9 @@ def build_barriers(pts):
 
 
 def build_props(pts):
-    """Street lights on the outside of the straights."""
+    """Street lights on the outside of the straights. Returns the mesh and the lamp-head positions (Blender cm)."""
     bm = bmesh.new()
+    heads = []
     for i, p in enumerate(pts):
         if p["corner"] or i % 4:
             continue
@@ -136,7 +141,8 @@ def build_props(pts):
         mr.add_box(bm, arm, (300, 14, 14), 0, rot_z_deg=yaw)
         head = _offset(p, WALL_OFFSET - 150, 778)
         mr.add_box(bm, head, (90, 30, 10), 1, rot_z_deg=yaw)
-    return mr.object_from_bmesh(bm, "SM_Track_Props", ["M_MR_Trim", "M_MR_Window"], smooth=False)
+        heads.append((head[0], head[1], head[2] - 10))
+    return mr.object_from_bmesh(bm, "SM_Track_Props", ["M_MR_Trim", "M_MR_StreetLamp"], smooth=False), heads
 
 
 def _clear_of_road(x, y, half, margin=2600):
@@ -198,7 +204,8 @@ def build():
     """Create every track mesh in the current scene. Returns (objects by name, layout dict)."""
     pts, lap_length = centreline()
     buildings, footprints = build_buildings()
-    objs = {o.name: o for o in (build_ground(pts), build_markings(pts), build_barriers(pts), build_props(pts),
+    props, lamp_heads = build_props(pts)
+    objs = {o.name: o for o in (build_ground(pts), build_markings(pts), build_barriers(pts), props,
                                 buildings, build_checkpoint_arch())}
     cps = checkpoints(pts, lap_length)
     start = (-3000.0, -HALF_Y, 60.0)
@@ -220,6 +227,8 @@ def build():
         "player_start": mr.to_unreal(start, 0.0),
         "checkpoints": [{"index": c["index"], **mr.to_unreal(c["blender_pos"], c["blender_yaw"])} for c in cps],
         "building_count": len(footprints),
+        "run": {"gates": list(RUN_GATES), "time_limit_s": RUN_TIME_LIMIT_S},
+        "street_lamps": [mr.to_unreal(h)["location"] for h in lamp_heads],
     }
     return objs, layout, cps
 

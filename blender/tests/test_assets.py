@@ -186,6 +186,33 @@ def test_track_layout_and_meshes():
     assert hi[0] - lo[0] > 2 * half_x / 100                      # ground reaches beyond the loop
 
 
+
+def test_checkpoint_run_gates_and_street_lamps():
+    """The timed run (AMRGameMode) and the lamp lights setup_visuals.py places."""
+    layout = json.loads((EXPORT / "track_layout.json").read_text())
+    run = layout["run"]
+    indices = [cp["index"] for cp in layout["checkpoints"]]
+    assert len(run["gates"]) == 3 and len(set(run["gates"])) == 3
+    assert all(g in indices for g in run["gates"])
+    assert run["gates"][-1] == 0                                  # finish on the start/finish line
+    assert 20 <= run["time_limit_s"] <= 180
+    # Gates come in lap order: each one further along the lap than the last (the finish wraps to 0).
+    assert run["gates"][:-1] == sorted(run["gates"][:-1]) and run["gates"][0] > 0
+
+    lamps = layout["street_lamps"]
+    assert 8 <= len(lamps) <= 60                                  # enough to light the straights, few enough for real lights
+    half_x, half_y = layout["half_extents_cm"]
+    for x, y, z in lamps:
+        assert abs(x) <= half_x + 2000 and abs(y) <= half_y + 2000
+        assert 600 < z < 900                                     # under the lamp head, above the car
+
+    materials = json.loads((EXPORT / "materials.json").read_text())["materials"]
+    assert materials["M_MR_StreetLamp"]["emissive_strength"] > 0
+    assert materials["M_MR_Asphalt"]["roughness"] <= 0.3         # wet road
+    track_props = next(m for m in layout["meshes"] if m["name"] == "SM_Track_Props")
+    assert "M_MR_StreetLamp" in track_props["materials"]
+
+
 def test_buildings_and_walls_keep_clear_of_the_road():
     layout = json.loads((EXPORT / "track_layout.json").read_text())
     half_x, half_y = (v / 100 for v in layout["half_extents_cm"])

@@ -37,12 +37,13 @@ MATERIALS = {
     "M_MR_LightRear": ("#FF2040", 0.0, 0.3, 10.0),
     "M_MR_NeonCyan": (NEON_CYAN, 0.0, 0.4, 8.0),
     "M_MR_NeonPink": (NEON_PINK, 0.0, 0.4, 8.0),
-    "M_MR_Asphalt": (ASPHALT, 0.0, 0.45, 0.0),
+    "M_MR_Asphalt": (ASPHALT, 0.0, 0.22, 0.0),       # wet: low roughness mirrors the neon and lamps
     "M_MR_Ground": ("#101014", 0.0, 0.8, 0.0),
     "M_MR_RoadLine": ("#E8E8F0", 0.0, 0.5, 0.6),
     "M_MR_Concrete": ("#2A2A33", 0.0, 0.8, 0.0),
     "M_MR_Building": ("#14141C", 0.3, 0.5, 0.0),
     "M_MR_Window": ("#FFC870", 0.0, 0.4, 3.0),
+    "M_MR_StreetLamp": ("#FFD49A", 0.0, 0.4, 14.0),  # sodium-warm lamp heads; Unreal adds a point light at each
 }
 
 

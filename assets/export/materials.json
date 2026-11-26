@@ -58,7 +58,7 @@
     "M_MR_Asphalt": {
       "color": "#19191E",
       "metallic": 0.0,
-      "roughness": 0.45,
+      "roughness": 0.22,
       "emissive_strength": 0.0
     },
     "M_MR_Ground": {
@@ -90,6 +90,12 @@
       "metallic": 0.0,
       "roughness": 0.4,
       "emissive_strength": 3.0
+    },
+    "M_MR_StreetLamp": {
+      "color": "#FFD49A",
+      "metallic": 0.0,
+      "roughness": 0.4,
+      "emissive_strength": 14.0
     }
   }
 }
